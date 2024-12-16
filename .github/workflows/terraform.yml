@@ -1,5 +1,5 @@
----
 name: Terraform Infrastructure Deployment
+
 on:
   push:
     branches:
@@ -10,38 +10,43 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Choose whether to apply or destroy infrastructure
+        description: 'Choose whether to apply or destroy infrastructure'
         required: true
-        default: apply
+        default: 'apply'
         type: choice
         options:
           - apply
           - destroy
+
 jobs:
   terraform:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
+
       - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.4.6
+
       - name: Check if Terraform Plan has changes
         id: check_changes
         run: |
           # List the contents of the directory to check if tfplan exists
-          ls -l ./  # List files in the root directory
-          # Run terraform plan and output to a file
+          ls -l ./terraform
+          # Initialize Terraform and generate a plan file
           terraform init
           terraform plan -out=tfplan
-
+          
           # Check if the plan file has changes
           if terraform show -no-color ./terraform/tfplan | grep -q 'No changes'; then
             echo "No changes detected. Skipping apply."
@@ -51,31 +56,36 @@ jobs:
             echo "no_changes=false" >> $GITHUB_ENV
           fi
         working-directory: ./terraform
+
       - name: Terraform Apply or Destroy
-        if: env.no_changes == 'false' && inputs.action == 'apply'
+        if: env.no_changes == 'false' && github.event.inputs.action == 'apply'
         run: |
-          terraform apply -auto-approve tfplan
-        working-directory: ./terraform/tfplan
+          terraform apply -auto-approve ./terraform/tfplan
+        working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
+
       - name: Terraform Destroy
-        if: inputs.action == 'destroy'
+        if: github.event.inputs.action == 'destroy'
         run: |
           terraform destroy -auto-approve
         working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
+
       - name: Capture Terraform Output
         id: capture_output
-        run: >
+        run: |
           echo "repository_url=$(terraform output -raw ecr_repository_url)" >> $GITHUB_ENV
-      - name: Update values.yaml with ECR URL
-        run: >
-          echo "Updating values.yaml with new repository URL"
+        working-directory: ./terraform
 
+      - name: Update values.yaml with ECR URL
+        run: |
+          echo "Updating values.yaml with new repository URL"
           sed -i 's|repository:.*|repository: ${REPOSITORY_URL}|g' helm/python-app/values.yaml
         env:
           REPOSITORY_URL: ${{ env.repository_url }}
+
       - name: Commit changes to values.yaml
         run: |
           git config user.name "GitHub Actions"
@@ -85,14 +95,16 @@ jobs:
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+
       - name: Create ECR repository (if not exists)
-        run: >
-          terraform import aws_ecr_repository.my_repository <ecr-repository-arn> ||
-          terraform apply -auto-approve
+        run: |
+          terraform import aws_ecr_repository.my_repository <ecr-repository-arn> || terraform apply -auto-approve
+        working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
+
       - name: Install kubectl & Helm, Configure EKS
-        run: >
+        run: |
           if ! command -v kubectl &> /dev/null; then
             curl -LO https://dl.k8s.io/release/v1.24.0/bin/linux/amd64/kubectl
             chmod +x ./kubectl
@@ -104,13 +116,13 @@ jobs:
           fi
 
           aws eks update-kubeconfig --name ${{ secrets.TF_VAR_CLUSTER_NAME }} --region ${{ secrets.AWS_DEFAULT_REGION }}
+
       - name: Install Nginx Ingress Controller
-        run: >
+        run: |
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-
           helm repo update
-
           helm install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=LoadBalancer
+
       - name: Verify Nginx Ingress Controller
         run: |
           kubectl get pods -n ingress-nginx
