@@ -1,5 +1,5 @@
+---
 name: Terraform Infrastructure Deployment
-
 on:
   push:
     branches:
@@ -10,58 +10,39 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Choose whether to apply or destroy infrastructure'
+        description: Choose whether to apply or destroy infrastructure
         required: true
-        default: 'apply'
+        default: apply
         type: choice
         options:
           - apply
           - destroy
-
 jobs:
   terraform:
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: Check out the code from the repository
       - name: Check out repository
         uses: actions/checkout@v2
-
-      # Step 2: Set up AWS credentials using GitHub Secrets
       - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-
-      # Step 3: Set up Terraform
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.4.6  # Specify the version of Terraform you need
-
-      # Step 4: Initialize Terraform
-      - name: Terraform Init
-        run: terraform init
-        working-directory: ./terraform
-        env:
-          TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
-      # Step 5: Run Terraform Plan and Check if Changes Exist
-      - name: Terraform Plan
-        id: plan
-        run: |
-          terraform plan -out=tfplan
-        working-directory: ./terraform
-        env:
-          TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
-      # Step 6: Check if Terraform Plan has changes
+          terraform_version: 1.4.6
       - name: Check if Terraform Plan has changes
         id: check_changes
         run: |
-          terraform show -no-color tfplan
+          # List the contents of the directory to check if tfplan exists
+          ls -l ./terraform
+          # Run terraform plan and output to a file
+          terraform init
+          terraform plan -out=tfplan
+
+          # Check if the plan file has changes
           if terraform show -no-color tfplan | grep -q 'No changes'; then
             echo "No changes detected. Skipping apply."
             echo "no_changes=true" >> $GITHUB_ENV
@@ -69,8 +50,7 @@ jobs:
             echo "Changes detected. Proceeding with apply."
             echo "no_changes=false" >> $GITHUB_ENV
           fi
-   
-      # Step 7: Apply or Destroy Terraform Resources based on Action Input and Plan Results
+        working-directory: ./terraform
       - name: Terraform Apply or Destroy
         if: env.no_changes == 'false' && inputs.action == 'apply'
         run: |
@@ -78,7 +58,6 @@ jobs:
         working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         run: |
@@ -86,22 +65,18 @@ jobs:
         working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
-      # Step 8: Capture the Terraform output (e.g., ECR URL)
       - name: Capture Terraform Output
         id: capture_output
-        run: |
-          echo "repository_url=$(terraform output -raw ecr_repository_url)" >> $GITHUB_ENV
-
-      # Step 9: Update values.yaml with the new ECR repository URL
+        run: >
+          echo "repository_url=$(terraform output -raw ecr_repository_url)" >>
+          $GITHUB_ENV
       - name: Update values.yaml with ECR URL
-        run: |
+        run: >
           echo "Updating values.yaml with new repository URL"
+
           sed -i 's|repository:.*|repository: ${REPOSITORY_URL}|g' helm/python-app/values.yaml
         env:
           REPOSITORY_URL: ${{ env.repository_url }}
-
-      # Step 10: Commit and push the changes back to the repository
       - name: Commit changes to values.yaml
         run: |
           git config user.name "GitHub Actions"
@@ -111,35 +86,32 @@ jobs:
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-
-      # Step 11: Create ECR repository (if not exists)
       - name: Create ECR repository (if not exists)
-        run: |
-          terraform import aws_ecr_repository.my_repository <ecr-repository-arn> || terraform apply -auto-approve
+        run: >
+          terraform import aws_ecr_repository.my_repository <ecr-repository-arn> ||
+          terraform apply -auto-approve
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
-      # Step 12: Install kubectl & Helm, Configure EKS
       - name: Install kubectl & Helm, Configure EKS
-        run: |
+        run: >
           if ! command -v kubectl &> /dev/null; then
             curl -LO https://dl.k8s.io/release/v1.24.0/bin/linux/amd64/kubectl
             chmod +x ./kubectl
             sudo mv ./kubectl /usr/local/bin/kubectl
           fi
+
           if ! command -v helm &> /dev/null; then
             curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
           fi
+
           aws eks update-kubeconfig --name ${{ secrets.TF_VAR_CLUSTER_NAME }} --region ${{ secrets.AWS_DEFAULT_REGION }}
-
-      # Step 13: Install Nginx Ingress Controller using Helm
       - name: Install Nginx Ingress Controller
-        run: |
+        run: >
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-          helm repo update
-          helm install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=LoadBalancer
 
-      # Step 14: Verify the installation of Nginx Ingress Controller
+          helm repo update
+
+          helm install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=LoadBalancer
       - name: Verify Nginx Ingress Controller
         run: |
           kubectl get pods -n ingress-nginx
