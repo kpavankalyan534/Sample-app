@@ -61,13 +61,15 @@ jobs:
       - name: Check if Terraform Plan has changes
         id: check_changes
         run: |
+          terraform show -no-color tfplan
           if terraform show -no-color tfplan | grep -q 'No changes'; then
             echo "No changes detected. Skipping apply."
             echo "no_changes=true" >> $GITHUB_ENV
           else
             echo "Changes detected. Proceeding with apply."
             echo "no_changes=false" >> $GITHUB_ENV
-
+          fi
+   
       # Step 7: Apply or Destroy Terraform Resources based on Action Input and Plan Results
       - name: Terraform Apply or Destroy
         if: env.no_changes == 'false' && inputs.action == 'apply'
