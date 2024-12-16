@@ -1,0 +1,91 @@
+name: Deploy to EKS
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Choose whether to deploy or uninstall
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - uninstall
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+      - name: Set up AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{
+            secrets.AWS_ROLE_NAME }}
+          role-session-name: GitHubActionsSession
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Log in to Amazon ECR
+        run: >
+          aws ecr get-login-password --region ${{ secrets.AWS_DEFAULT_REGION }} |
+          docker login --username AWS --password-stdin ${{
+          secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_DEFAULT_REGION
+          }}.amazonaws.com
+      - name: Build Docker image
+        run: >
+          VERSION="1.0.0"
+
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+          IMAGE_TAG="${VERSION}-${TIMESTAMP}"
+
+
+          # Build and tag the Docker image
+
+          docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_DEFAULT_REGION }}.amazonaws.com/my-python-app:$IMAGE_TAG .
+
+
+          # Push the Docker image to ECR
+
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_DEFAULT_REGION }}.amazonaws.com/my-python-app:$IMAGE_TAG
+      - name: Update values.yaml with new image tag
+        run: >
+          # Set the path to your values.yaml file
+
+          VALUES_FILE="helm/python-app/values.yaml"
+
+
+          # Replace the existing image tag in the values.yaml with the new tag
+
+          echo "Updating values.yaml with new image tag: ${IMAGE_TAG}"
+
+
+          # Use 'sed' or similar tool to update the image tag in the values.yaml file
+
+          sed -i "s|repository:.*|repository: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_DEFAULT_REGION }}.amazonaws.com/my-python-app|g" $VALUES_FILE
+
+          sed -i "s|tag:.*|tag: $IMAGE_TAG|g" $VALUES_FILE
+      - name: Commit and push changes to values.yaml
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add helm/python-app/values.yaml
+          git commit -m "Update Docker image tag in values.yaml to $IMAGE_TAG"
+          git push
+      - name: Deploy or Uninstall based on input
+        run: >
+          if [[ "${{ github.event.inputs.action }}" == "uninstall" ]]; then
+            echo "Uninstalling application..."
+            helm uninstall python-app --namespace pavan
+          else
+            echo "Deploying application..."
+            helm upgrade --install python-app --namespace pavan -f helm/python-app/values.yaml
+          fi
+        env:
+          ACTION: ${{ github.event.inputs.action }}

@@ -1,5 +1,5 @@
 provider "aws" {
-  region = "us-west-2"  # Set the region for all resources
+  region = "eu-north-1"  # Set the region for all resources
 }
 module "vpc" {
   source      = "./modules/vpc"
