@@ -54,6 +54,10 @@ jobs:
             echo "no_changes=false" >> $GITHUB_ENV
           fi
         working-directory: ./terraform
+      - name: Debug no_changes variable
+        run: |
+          echo "Applying Terraform plan"
+          echo "No changes variable is: ${{ env.no_changes }}"
 
       - name: Terraform Apply or Destroy
         if: env.no_changes == 'false' && github.event.inputs.action == 'apply'
