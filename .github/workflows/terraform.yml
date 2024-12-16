@@ -37,7 +37,8 @@ jobs:
         id: check_changes
         run: |
           # List the contents of the directory to check if tfplan exists
-          ls -l ./terraform
+          ls -l ./  # List files in the root directory
+          ls -l ./terraform  # List files in the terraform directory
           # Run terraform plan and output to a file
           terraform init
           terraform plan -out=tfplan
