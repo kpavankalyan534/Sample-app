@@ -11,6 +11,10 @@ resource "aws_iam_role" "eks_cluster_role" {
       Sid       = ""
     }]
   })
+  lifecycle {
+    create_before_destroy = true  # Ensures resources are created before destroying
+    prevent_destroy        = true  # Prevents the role from being deleted unintentionally
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
@@ -32,6 +36,10 @@ resource "aws_iam_role" "ecr_access_role" {
       Sid       = ""
     }]
   })
+  lifecycle {
+    create_before_destroy = true  # Ensures resources are created before destroying
+    prevent_destroy        = true  # Prevents the role from being deleted unintentionally
+  }
 }
 
 # Attach ECR policy to ECR Access Role

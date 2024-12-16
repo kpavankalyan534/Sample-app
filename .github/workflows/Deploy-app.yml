@@ -77,6 +77,8 @@ jobs:
           git add helm/python-app/values.yaml
           git commit -m "Update Docker image tag in values.yaml to $IMAGE_TAG"
           git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       - name: Deploy or Uninstall based on input
         run: >
           if [[ "${{ github.event.inputs.action }}" == "uninstall" ]]; then
