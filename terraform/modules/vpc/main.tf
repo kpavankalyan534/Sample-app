@@ -8,3 +8,7 @@ resource "aws_subnet" "subnet" {
   cidr_block = cidrsubnet(aws_vpc.vpc.cidr_block, 8, count.index)
   availability_zone = element(data.aws_availability_zones.available.names, count.index)
 }
+
+data "aws_availability_zones" "available" {
+  
+}

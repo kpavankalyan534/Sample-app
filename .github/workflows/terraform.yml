@@ -47,6 +47,7 @@ jobs:
           terraform init
           terraform plan
           terraform apply -auto-approve
+        working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
 
