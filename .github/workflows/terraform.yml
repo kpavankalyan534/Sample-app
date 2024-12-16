@@ -38,13 +38,12 @@ jobs:
         run: |
           # List the contents of the directory to check if tfplan exists
           ls -l ./  # List files in the root directory
-          ls -l ./terraform  # List files in the terraform directory
           # Run terraform plan and output to a file
           terraform init
           terraform plan -out=tfplan
 
           # Check if the plan file has changes
-          if terraform show -no-color tfplan | grep -q 'No changes'; then
+          if terraform show -no-color ./terraform/tfplan | grep -q 'No changes'; then
             echo "No changes detected. Skipping apply."
             echo "no_changes=true" >> $GITHUB_ENV
           else
@@ -56,7 +55,7 @@ jobs:
         if: env.no_changes == 'false' && inputs.action == 'apply'
         run: |
           terraform apply -auto-approve tfplan
-        working-directory: ./terraform
+        working-directory: ./terraform/tfplan
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
       - name: Terraform Destroy
