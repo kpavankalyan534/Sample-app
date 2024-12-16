@@ -46,11 +46,23 @@ jobs:
         run: |
           terraform init
           terraform plan
+        working-directory: ./terraform
+        env:
+          TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
+      - name: Terraform Apply
+        if:  github.event.inputs.action == 'apply'
+        run: |
           terraform apply -auto-approve
         working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          terraform destroy -auto-approve
+        working-directory: ./terraform
+        env:
+          TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
       # Step 5: Capture the Terraform output (e.g., ECR URL)
       - name: Capture Terraform Output
         id: capture_output
