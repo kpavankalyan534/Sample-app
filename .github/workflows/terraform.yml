@@ -34,110 +34,89 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-
       # Step 3: Set up Terraform
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.4.6  # Specify the version of Terraform you need
 
-      # Step 4: Initialize Terraform
-      - name: Terraform Init
-        run: terraform init
+      # Step 4: Run Terraform Apply and capture outputs
+      - name: Terraform Apply
+        id: terraform_apply
+        run: |
+          terraform init
+          terraform plan
+          terraform apply -auto-approve
         working-directory: ./terraform
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
 
-      # Step 5: Run Terraform Plan and Check if Changes Exist
-      - name: Terraform Plan
-        id: plan
-        run: |
-          terraform plan -out=tfplan
-        working-directory: ./terraform
-        env:
-          TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
-      # Step 6: Check if Terraform Plan has changes
-      - name: Check if Terraform Plan has changes
-        id: check_changes
-        run: |
-          if terraform show -no-color tfplan | grep -q 'No changes'; then
-            echo "No changes detected. Skipping apply."
-            echo "no_changes=true" >> $GITHUB_ENV
-          else
-            echo "Changes detected. Proceeding with apply."
-            echo "no_changes=false" >> $GITHUB_ENV
-
-      # Step 7: Apply or Destroy Terraform Resources based on Action Input and Plan Results
-      - name: Terraform Apply or Destroy
-        if: env.no_changes == 'false' && inputs.action == 'apply'
-        run: |
-          terraform apply -auto-approve tfplan
-        working-directory: ./terraform
-        env:
-          TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
-      - name: Terraform Destroy
-        if: inputs.action == 'destroy'
-        run: |
-          terraform destroy -auto-approve
-        working-directory: ./terraform
-        env:
-          TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
-
-      # Step 8: Capture the Terraform output (e.g., ECR URL)
+      # Step 5: Capture the Terraform output (e.g., ECR URL)
       - name: Capture Terraform Output
         id: capture_output
         run: |
-          echo "repository_url=$(terraform output -raw ecr_repository_url)" >> $GITHUB_ENV
+          echo "repository_url=$(terraform output -raw repository_url)" >> $GITHUB_ENV
 
-      # Step 9: Update values.yaml with the new ECR repository URL
+      # Step 6: Update the values.yaml file with the new ECR repository URL
       - name: Update values.yaml with ECR URL
         run: |
+          # Read the repository URL from the GitHub environment variable
           echo "Updating values.yaml with new repository URL"
+          
+          # Use sed or another method to replace the repository URL in values.yaml
           sed -i 's|repository:.*|repository: ${REPOSITORY_URL}|g' helm/python-app/values.yaml
-        env:
-          REPOSITORY_URL: ${{ env.repository_url }}
 
-      # Step 10: Commit and push the changes back to the repository
+        env:
+          REPOSITORY_URL: ${{ env.repository_url }}  # This is the value captured from the previous step
+
+      # Step 7: Commit and push the changes back to the repository
       - name: Commit changes to values.yaml
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add helm/python-app/values.yaml
+          git add path/to/your/values.yaml
           git commit -m "Update ECR repository URL in values.yaml"
           git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-
-      # Step 11: Create ECR repository (if not exists)
+          
+      # Step 8: Create ECR repository using Terraform (If not already created)
       - name: Create ECR repository (if not exists)
         run: |
+          # Define your ECR repository resource in Terraform if it doesn't already exist
           terraform import aws_ecr_repository.my_repository <ecr-repository-arn> || terraform apply -auto-approve
         env:
           TF_VAR_cluster_name: ${{ secrets.TF_VAR_CLUSTER_NAME }}
 
-      # Step 12: Install kubectl & Helm, Configure EKS
+      # Step 9: Configure kubectl and install Helm (if not pre-installed)
       - name: Install kubectl & Helm, Configure EKS
         run: |
+          # Check if kubectl is already installed (optional step)
           if ! command -v kubectl &> /dev/null; then
+            echo "Installing kubectl"
             curl -LO https://dl.k8s.io/release/v1.24.0/bin/linux/amd64/kubectl
             chmod +x ./kubectl
             sudo mv ./kubectl /usr/local/bin/kubectl
           fi
+
+          # Check if Helm is already installed (optional step)
           if ! command -v helm &> /dev/null; then
+            echo "Installing Helm"
             curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
           fi
+
+          # Configure kubectl to use the EKS cluster
           aws eks update-kubeconfig --name ${{ secrets.TF_VAR_CLUSTER_NAME }} --region ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # Step 13: Install Nginx Ingress Controller using Helm
+      # Step 10: Install Nginx Ingress Controller using Helm
       - name: Install Nginx Ingress Controller
         run: |
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
           helm repo update
-          helm install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=LoadBalancer
+          helm install nginx-ingress ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx \
+            --create-namespace \
+            --set controller.service.type=LoadBalancer
 
-      # Step 14: Verify the installation of Nginx Ingress Controller
+      # Step 11: Verify the installation of Nginx Ingress Controller
       - name: Verify Nginx Ingress Controller
         run: |
           kubectl get pods -n ingress-nginx
