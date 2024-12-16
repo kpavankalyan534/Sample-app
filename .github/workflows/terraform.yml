@@ -41,8 +41,6 @@ jobs:
       - name: Check if Terraform Plan has changes
         id: check_changes
         run: |
-          # List the contents of the directory to check if tfplan exists
-          ls -l ./terraform
           # Initialize Terraform and generate a plan file
           terraform init
           terraform plan -out=tfplan
